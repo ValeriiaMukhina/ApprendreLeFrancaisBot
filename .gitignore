@@ -1,0 +1,13 @@
+# Python caches
+__pycache__/
+*.pyc
+
+# Virtual environment
+env/
+venv/
+
+# Environment variables file (avoid storing secrets)
+.env
+
+# OS-specific files
+.DS_Store
