@@ -5,7 +5,8 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ConversationHandler
 from dotenv import load_dotenv
 import openai
 from openai import AsyncOpenAI
-import youtube_utils 
+import youtube_utils
+from localization import MESSAGES
 
 # Load environment variables from .env file
 load_dotenv()
@@ -20,11 +21,28 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 openai.api_key = os.getenv("OPENAI_API_KEY")
 client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-VIDEO, LEVEL, ASK_EXERCISE, TRANSLATION = range(4)
+LANG, VIDEO, LEVEL, ASK_EXERCISE, TRANSLATION = range(5)
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Hello! I'm your language learning bot. How can I help you today?")
+
+
+async def language_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    choice = update.message.text.strip().lower()
+    if choice == 'english':
+        context.user_data['lang'] = 'en'
+    elif choice in ['українська', 'ukrainian']:
+        context.user_data['lang'] = 'ua'
+    else:
+        context.user_data['lang'] = 'en'
+    lang = context.user_data['lang']
+    welcome_message = MESSAGES[lang]['welcome']
+    # Open the local image file in binary mode
+    with open("welcome_image.png", "rb") as photo_file:
+        await update.message.reply_photo(photo=photo_file, caption=welcome_message)
+
+    ask_youtube = MESSAGES[lang]['ask_youtube']
+    await update.message.reply_text(ask_youtube)
+    return VIDEO
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # This function echoes the user message (for testing purposes)
@@ -72,20 +90,36 @@ async def generate_exercise_sentence_from_phrases(phrases, level):
     except Exception as e:
         return f"Error generating exercise sentence: {e}"
 
-async def verify_translation(original_sentence, user_translation, phrases, level):
-    prompt = (
-        f"You are a French language tutor. A student was given the following exercise:\n\n"
-        f"Original Ukrainian sentence: \"{original_sentence}\"\n"
-        f"Student's French translation: \"{user_translation}\"\n\n"
-        f"Useful phrases (with Ukrainian translations) for level {level}: {phrases}\n\n"
-        "Provide the correct translation, point out any errors in the student's translation, "
-        "and explain the corrections."
-    )
+async def verify_translation(original_sentence, user_translation, phrases, level, lang):
+    if lang == 'ua':
+        prompt = (
+            f"Ви — викладач французької мови. Учень отримав наступну вправу:\n\n"
+            f"Оригінальне українське речення: \"{original_sentence}\"\n"
+            f"Французький переклад учня: \"{user_translation}\"\n\n"
+            f"Корисні фрази для рівня {level}: {phrases}\n\n"
+            "Надайте правильний французький переклад, вкажіть помилки у перекладі учня "
+            "та поясніть, як їх виправити, українською."
+        )
+    else:
+        prompt = (
+            f"You are a French language tutor. A student was given the following exercise:\n\n"
+            f"Original Ukrainian sentence: \"{original_sentence}\"\n"
+            f"Student's French translation: \"{user_translation}\"\n\n"
+            f"Useful phrases for level {level}: {phrases}\n\n"
+            "Provide the correct French translation, point out any errors in the student's translation, "
+            "and explain the corrections in English."
+        )
     try:
         response = await client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are a helpful French language tutor and translation expert."},
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a helpful French language tutor and translation expert. "
+                        "Respond in Ukrainian." if lang == 'ua' else "Respond in English."
+                    )
+                },
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
@@ -96,60 +130,73 @@ async def verify_translation(original_sentence, user_translation, phrases, level
         return f"Error verifying translation: {e}"
 
 
-# Start command handler: ask for YouTube link
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Welcome! Please send me a YouTube video link.")
-    return VIDEO
+    # Offer a keyboard for language selection
+    reply_keyboard = [['English', 'Українська']]
+    await update.message.reply_text(
+        "Please choose your preferred language / Будь ласка, оберіть бажану мову:",
+        reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
+    )
+    return LANG
 
-# Handle video link input
 async def video_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     video_url = update.message.text
+    lang = context.user_data.get('lang', 'en')  # Get the selected language, default to English
     try:
-        # Fetch the transcript (try French, fallback to English if needed)
         transcript = youtube_utils.get_youtube_transcript(video_url, languages=['fr', 'en'])
         context.user_data['transcript'] = transcript
         context.user_data['video_url'] = video_url
-        await update.message.reply_text("Transcript loaded! Now, please specify your level (A1, A2, B1, B2, C1, or C2).")
+        # Retrieve the localized level prompt from the MESSAGES dictionary
+        ask_level = MESSAGES[lang]['ask_level']
+        await update.message.reply_text(ask_level)
         return LEVEL
     except Exception as e:
-        await update.message.reply_text(f"Error obtaining transcript: {e}\nPlease send a valid YouTube link.")
+        await update.message.reply_text(f"Error obtaining transcript: {e}\n" + MESSAGES[lang]['ask_youtube'])
         return VIDEO
 
 # Handle level input
 async def level_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     level = update.message.text.upper().strip()
+
     if level not in ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']:
         await update.message.reply_text("Invalid level. Please enter one of: A1, A2, B1, B2, C1, C2.")
         return LEVEL
 
     context.user_data['level'] = level
-
-    # Extract useful phrases using the transcript and level
     transcript = context.user_data['transcript']
+    # Call your helper function to extract useful phrases
     phrases = await extract_useful_phrases(transcript, level)
     context.user_data['useful_phrases'] = phrases
-    await update.message.reply_text(f"Here are some useful phrases for level {level}:\n\n{phrases}")
+    lang = context.user_data.get('lang', 'en')
+    header = MESSAGES[lang]['useful_phrases_header'].format(level=level)
+    await update.message.reply_text(f"{header}\n\n{phrases}")
 
-    # Ask if the user wants to practice exercises based on these phrases.
-    reply_keyboard = [['Yes', 'No']]
-    await update.message.reply_text("Would you like to practice exercises based on these phrases?",
-                                    reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True))
+    ask_exercise = MESSAGES[lang]['ask_exercise']
+    reply_keyboard = [['Yes', 'No']] if lang == 'en' else [['Так', 'Ні']]
+    await update.message.reply_text(
+        ask_exercise,
+        reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
+    )
     return ASK_EXERCISE
 
 # Handle user's choice for exercise practice
 async def exercise_choice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     choice = update.message.text.lower()
-    if choice == 'yes':
+    lang = context.user_data.get('lang', 'en')
+    if choice in ['yes', 'так']:
         level = context.user_data['level']
         phrases = context.user_data['useful_phrases']
         # Generate an exercise sentence using the extracted phrases.
         exercise_sentence = await generate_exercise_sentence_from_phrases(phrases, level)
         context.user_data['current_exercise'] = exercise_sentence
+        lang = context.user_data.get('lang', 'en')
+        translate_prompt = MESSAGES[lang]['translate_prompt']
         await update.message.reply_text(
-            f"Translate the following sentence into French:\n\n{exercise_sentence}")
+            f"{translate_prompt}\n\n{exercise_sentence}"
+        )
         return TRANSLATION
     else:
-        await update.message.reply_text("Alright, feel free to send a new video link whenever you're ready.")
+        await update.message.reply_text(MESSAGES[lang]['session_cancelled'])
         return ConversationHandler.END
 
 # Handle user's translation responses
@@ -158,44 +205,50 @@ async def translation_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     current_sentence = context.user_data.get('current_exercise')
     phrases = context.user_data.get('useful_phrases')
     level = context.user_data.get('level')
+    lang = context.user_data.get('lang', 'en')
+    
     if not current_sentence:
         await update.message.reply_text("There's no active exercise. Please start a new one with /start.")
         return ConversationHandler.END
 
-    await update.message.reply_text("Processing your translation, please wait...")
-    feedback = await verify_translation(current_sentence, user_translation, phrases, level)
+    processing_msg = MESSAGES[lang]['processing']
+    await update.message.reply_text(processing_msg)
+    lang = context.user_data.get('lang', 'en')
+    feedback = await verify_translation(current_sentence, user_translation, phrases, level, lang)
     await update.message.reply_text(feedback)
 
-    # Automatically generate a new exercise sentence from the same phrases.
+    # Automatically generate a new exercise sentence for continued practice.
     new_sentence = await generate_exercise_sentence_from_phrases(phrases, level)
     context.user_data['current_exercise'] = new_sentence
-    await update.message.reply_text(
-        f"Next sentence for translation:\n\n{new_sentence}")
+    new_sentence_msg = MESSAGES[lang]['new_sentence']
+    await update.message.reply_text(f"{new_sentence_msg}\n\n{new_sentence}")
     return TRANSLATION
 
 # Cancel handler in case the user wants to abort the conversation
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Operation cancelled. Type /start to begin again.")
+    context.user_data.clear()
+    lang = context.user_data.get('lang', 'en')
+    await update.message.reply_text(MESSAGES[lang]['session_cancelled'])
     return ConversationHandler.END
 
 async def new_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data.clear()  # Clear any previous session data
-    await update.message.reply_text("You've chosen to enter a new video. Please send me your new YouTube link.")
-    return VIDEO  # Reset the conversation state to expect a new video link.
+    lang = context.user_data.get('lang', 'en')  # Save the current language selection
+    context.user_data.clear()                   # Clear all session data
+    context.user_data['lang'] = lang            # Restore the language setting
+    await update.message.reply_text(MESSAGES[lang]['new_link'])
+    return VIDEO
 
 # Create and add the conversation handler to your application
 conv_handler = ConversationHandler(
     entry_points=[CommandHandler('start', start)],
     states={
+        LANG: [MessageHandler(filters.Regex("^(English|Українська)$"), language_handler)],
         VIDEO: [MessageHandler(filters.TEXT & ~filters.COMMAND, video_handler)],
         LEVEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, level_handler)],
-        ASK_EXERCISE: [MessageHandler(filters.Regex('^(Yes|No)$'), exercise_choice_handler)],
+        ASK_EXERCISE: [MessageHandler(filters.Regex("^(Yes|No|Так|Ні)$"), exercise_choice_handler)],
         TRANSLATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, translation_handler)]
     },
-    fallbacks=[
-        CommandHandler('cancel', cancel),
-        CommandHandler('newlink', new_link)
-    ]
+    fallbacks=[CommandHandler('cancel', cancel), CommandHandler('newlink', new_link)]
 )
 
 
