@@ -16,13 +16,9 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-
-# Your bot token from BotFather should be stored in a .env file as TELEGRAM_BOT_TOKEN
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 openai.api_key = os.getenv("OPENAI_API_KEY")
 client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-
-
 
 VIDEO, LEVEL, ASK_EXERCISE, TRANSLATION = range(4)
 
@@ -208,13 +204,12 @@ conv_handler = ConversationHandler(
 if __name__ == '__main__':
     application = ApplicationBuilder().token(TOKEN).build()
 
-    # Register handlers for different commands and messages
     start_handler = CommandHandler("start", start)
     echo_handler = MessageHandler(filters.TEXT & ~filters.COMMAND, echo)
 
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler('newlink', new_link))
     application.add_handler(CommandHandler('cancel', cancel))
-    # Start the bot
+
     print("Bot is running...")
     application.run_polling()

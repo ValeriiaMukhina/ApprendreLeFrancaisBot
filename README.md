@@ -134,3 +134,16 @@ The bot will generate a Ukrainian sentence for you to translate into French. Aft
 
 - Reset or Enter New Video:
 At any time, use the /cancel or /newlink command to end the current session and start over with a new YouTube link.
+
+
+## License
+This project is open source and available under the MIT License.
+
+## Acknowledgements
+- OpenAI for their language models.
+
+- python-telegram-bot for providing the framework for this chatbot.
+
+- youtube-transcript-api for transcript extraction.
+
+- The open-source community for feedback and contributions.
