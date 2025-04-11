@@ -1,6 +1,24 @@
 # Language Learning Telegram Bot
 
-A Telegram-based chatbot designed to help users practice French translation by converting dynamically generated Ukrainian sentences. This interactive bot leverages OpenAI’s language models to generate translation exercises and evaluate user translations—providing corrected translations along with detailed explanations and comments.
+Imagine a dynamic language-learning experience that transforms everyday YouTube videos into a personalized French translation exercise! Our Telegram-based chatbot empowers you to master French by leveraging real-world video content. Here’s what makes it truly unique:
+
+- Seamless YouTube Integration:
+Simply share a YouTube video link, and the bot automatically extracts the transcript using cutting-edge technology. No more manual copying—just fast, accurate transcript extraction at your fingertips.
+
+- Tailored Language Learning:
+The bot uses OpenAI’s language models to pinpoint and extract the most useful French phrases from the video transcript, complete with Ukrainian translations. These phrases are customized to your specific proficiency level, ranging from A1 to C2, ensuring that the learning content is perfectly suited to your needs.
+
+- Interactive Translation Practice:
+Once the useful phrases are presented, the chatbot challenges you with real translation exercises. It generates concise Ukrainian sentences that incorporate key vocabulary and grammar from the video content. Your task is to translate these sentences into French.
+
+- Instant, Intelligent Feedback:
+After you submit your translation, the bot doesn’t just check your work—it provides detailed corrections and explanations. Discover exactly where you went astray and how to improve, all in real time.
+
+- Continuous, Adaptive Exercises:
+Learning never stops! As soon as your translation is evaluated, the bot automatically generates a new exercise, keeping you immersed in a productive learning cycle. And if you ever want to change the content, simply enter a new YouTube link or cancel the current session with a command.
+
+- User-Friendly and Engaging:
+Built on Telegram, the chatbot provides a smooth, conversational interface that makes language learning both fun and interactive. Whether you’re a beginner or an advanced learner, the experience adapts to your pace and style of learning.
 
 ## Table of Contents
 
@@ -17,27 +35,31 @@ A Telegram-based chatbot designed to help users practice French translation by c
 
 ## Overview
 
-This project is an interactive language-learning tool that allows users to improve their French translation skills. The bot:
-- Generates a Ukrainian sentence based on topics (vocabulary and grammar) derived from the EditoB1 textbook.
-- Prompts users to translate the sentence into French.
-- Evaluates the translation using an OpenAI language model, returning corrections and detailed explanations of any errors.
-- Automatically generates a new sentence for continuous practice within the same unit.
+This project is an advanced language-learning tool designed for French learners. Instead of relying on preloaded content, the bot uses a YouTube video link provided by the user to:
+- Extract a transcript from the video.
+- Identify and extract useful French phrases (with Ukrainian translations) that are appropriate for a specific language level (A1, A2, B1, B2, C1, C2).
+- Offer a series of translation exercises where the user translates Ukrainian sentences into French.
+- Provide immediate feedback by verifying the translation, correcting mistakes, and explaining errors.
+- Allow users to reset the session and submit a new video link at any time.
 
-The exercises are dynamically tailored using a JSON file (`EditoB1.json`) that holds information for each unit (e.g., unit number, title, vocabulary, grammar topics).
 
 ## Features
 
-- **Dynamic Sentence Generation:**  
-  Generates targeted Ukrainian sentences for translation practice based on unit-specific vocabulary and grammar topics.
-  
-- **Translation Evaluation & Feedback:**  
-  Accepts user translations and leverages OpenAI’s models (GPT‑3.5 Turbo or GPT‑4) to verify correctness, correct errors, and provide detailed commentary.
-  
-- **Continuous Practice:**  
-  After evaluating a translation, the bot automatically sends a new sentence from the same unit for further practice.
-  
-- **Telegram Integration:**  
-  Fully integrated with Telegram using the `python-telegram-bot` library, allowing for a seamless conversational user interface.
+- **Dynamic Content Extraction:**  
+  Automatically extracts the transcript from any provided YouTube video using the `youtube_transcript_api`.
+
+- **Adaptive Language Support:**  
+  Tailors the extracted useful phrases according to the student’s level (A1 through C2) using OpenAI’s language models.
+
+- **Interactive Translation Exercises:**  
+  Generates Ukrainian sentences based on the extracted vocabulary for the student to translate into French.
+
+- **Automated Feedback:**  
+  Verifies the user's translation, returning the correct translation along with explanations of any errors.
+
+- **Session Management:**  
+  Users can start a new session with a new YouTube link at any time by using commands such as `/cancel` or `/newlink`.
+
 
 ## Prerequisites
 
@@ -92,8 +114,23 @@ With your virtual environment activated, run:
 
 Interact via Telegram:
 
-Start the Bot: Type /start to begin.
+- Start the Conversation:
+Send the /start command. The bot will ask for a YouTube video link.
 
-Begin an Exercise: Type /exercise <unit_number> (e.g., /exercise 1) to receive a Ukrainian sentence.
+- Submit a Video Link:
+Provide the YouTube URL. The bot will fetch the transcript automatically.
 
-Submit Your Translation: Reply with your French translation. The bot will evaluate your input and send back corrections and explanations, then prompt you with a new sentence from the same unit.
+- Select Your Level:
+Next, you’ll be prompted to enter your level (A1, A2, B1, B2, C1, or C2).
+
+- Receive Useful Phrases:
+The bot will extract and display a list of useful French phrases (with Ukrainian translations) from the video transcript.
+
+- Choose to Practice:
+When prompted, type Yes to begin translation exercises based on the extracted phrases.
+
+- Translation Exercise:
+The bot will generate a Ukrainian sentence for you to translate into French. After you send your translation, the bot will verify it, provide corrections and explanations, and then automatically generate another sentence for you to translate.
+
+- Reset or Enter New Video:
+At any time, use the /cancel or /newlink command to end the current session and start over with a new YouTube link.

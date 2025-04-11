@@ -1,12 +1,11 @@
 import logging
 import os
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, ConversationHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
-import json
 import openai
-import asyncio
 from openai import AsyncOpenAI
+import youtube_utils 
 
 # Load environment variables from .env file
 load_dotenv()
@@ -23,17 +22,10 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 openai.api_key = os.getenv("OPENAI_API_KEY")
 client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# Load the JSON file that contains your EditoB1 data
-try:
-    with open("EditoB1.json", "r", encoding="utf-8") as f:
-        edito_data = json.load(f)
-except Exception as e:
-    print("Error loading JSON file:", e)
-    edito_data = None
 
 
-# Dictionary to store current exercise per chat (keyed by chat_id)
-current_exercises = {}
+VIDEO, LEVEL, ASK_EXERCISE, TRANSLATION = range(4)
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Hello! I'm your language learning bot. How can I help you today?")
@@ -43,39 +35,36 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_message = update.message.text
     await update.message.reply_text(f"You said: {user_message}")
 
-async def list_units(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Check if the JSON data loaded successfully
-    if not edito_data or "units" not in edito_data:
-        await update.message.reply_text("Sorry, the unit data is not available at the moment.")
-        return
 
-    # Build a message that lists the units with their titles
-    units = edito_data["units"]
-    message_text = "Available Units:\n"
-    for unit in units:
-        # Example: "Unité 1: Introductions & Daily Life"
-        message_text += f"{unit['unit']}: {unit['title']}\n"
-
-    await update.message.reply_text(message_text)
-
-async def generate_exercise_sentence(unit_info):
-    """
-    Generate a Ukrainian sentence for a translation exercise based on the provided unit topics.
-    """
-    # Prepare the prompt using vocabulary and grammar topics from the unit
-    vocabulary = ", ".join(unit_info.get("vocabulary", []))
-    grammar = ", ".join(unit_info.get("grammar_topics", []))
+async def extract_useful_phrases(transcript, level):
     prompt = (
-        f"Generate a concise Ukrainian sentence for a French translation exercise. "
-        f"The sentence should incorporate the following vocabulary: {vocabulary} and "
-        f"test these grammar topics: {grammar}. "
-        "Return ONLY the Ukrainian sentence without any French translation or additional commentary."
+        f"Extract a list of useful French phrases for a level {level} learner "
+        f"from the following video transcript. For each phrase, provide its translation into Ukrainian.\n\nTranscript:\n{transcript}\n\n"
+        "Return the result in a bullet list format."
     )
-
     try:
-        # Use the asynchronous method via the client
         response = await client.chat.completions.create(
-            model="gpt-3.5-turbo",  # or "gpt-4" if you have access
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are an expert French language teacher."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=500,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return f"Error extracting useful phrases: {e}"
+
+async def generate_exercise_sentence_from_phrases(phrases, level):
+    prompt = (
+        f"Based on the following useful French phrases for a level {level} learner:\n\n{phrases}\n\n"
+        "Generate a concise Ukrainian sentence that a French learner should translate into French. "
+        "The sentence should include at least one of the phrases and be appropriate for the student's level."
+    )
+    try:
+        response = await client.chat.completions.create(
+            model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are a creative language exercise generator."},
                 {"role": "user", "content": prompt}
@@ -83,123 +72,136 @@ async def generate_exercise_sentence(unit_info):
             temperature=0.7,
             max_tokens=100,
         )
-        generated_sentence = response.choices[0].message.content.strip()
+        return response.choices[0].message.content.strip()
     except Exception as e:
-        generated_sentence = f"Error generating sentence: {e}"
-    return generated_sentence
+        return f"Error generating exercise sentence: {e}"
 
-
-async def send_exercise(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Check if the user provided a unit number (e.g., /exercise 1)
-    if not context.args:
-        await update.message.reply_text("Please provide the unit number. E.g., /exercise 1")
-        return
-
-    unit_number = context.args[0]
-    # Find the unit in edito_data that matches (assuming unit field contains the number)
-    selected_unit = None
-    for unit in edito_data["units"]:
-        # We'll assume unit["unit"] contains e.g., "Unité 1"
-        if unit_number in unit["unit"]:
-            selected_unit = unit
-            break
-
-    if not selected_unit:
-        await update.message.reply_text("Unit not found. Please check the unit number.")
-        return
-
-    # Generate a Ukrainian sentence dynamically using the LLM based on the unit's topics
-    sentence = await generate_exercise_sentence(selected_unit)
-
-    # Store the current exercise (using chat id as key) so we can verify later
-    chat_id = update.message.chat_id
-    current_exercises[chat_id] = {
-        "unit": selected_unit,
-        "ukrainian_sentence": sentence
-    }
-
-    await update.message.reply_text(
-        f"Translate the following sentence into French:\n\n{sentence}\n\nPlease reply with your translation."
-    )
-
-async def verify_translation(ukrainian_sentence, user_translation, unit_info):
-    """
-    Verify the user's French translation of a Ukrainian sentence.
-    Provides the corrected translation and detailed explanations of errors.
-    """
-    # Prepare vocabulary and grammar details for the prompt
-    vocabulary = ", ".join(unit_info.get("vocabulary", []))
-    grammar = ", ".join(unit_info.get("grammar_topics", []))
-    
-    # Build the prompt for the LLM
+async def verify_translation(original_sentence, user_translation, phrases, level):
     prompt = (
-        f"You are a helpful French language tutor specializing in translation. "
-        f"A student was given the following Ukrainian sentence to translate into French:\n"
-        f"Ukrainian: \"{ukrainian_sentence}\"\n"
-        f"The student's French translation is: \"{user_translation}\"\n\n"
-        f"This unit covers vocabulary such as: {vocabulary} and grammar topics including: {grammar}.\n\n"
-        "Please do the following:\n"
-        "1. Provide the correct translation.\n"
-        "2. Explain in detail any errors made by the student and why the correction is needed.\n"
-        "Your explanation should refer to the vocabulary and grammar topics when relevant."
+        f"You are a French language tutor. A student was given the following exercise:\n\n"
+        f"Original Ukrainian sentence: \"{original_sentence}\"\n"
+        f"Student's French translation: \"{user_translation}\"\n\n"
+        f"Useful phrases (with Ukrainian translations) for level {level}: {phrases}\n\n"
+        "Provide the correct translation, point out any errors in the student's translation, "
+        "and explain the corrections."
     )
-    
     try:
-        # Use our asynchronous client to call the ChatCompletion endpoint
         response = await client.chat.completions.create(
-            model="gpt-3.5-turbo",  # or "gpt-4" if available
+            model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are a helpful French language tutor and translation expert."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
-            max_tokens=500,
+            max_tokens=300,
         )
-        feedback = response.choices[0].message.content.strip()
+        return response.choices[0].message.content.strip()
     except Exception as e:
-        feedback = f"Error verifying translation: {e}"
-    return feedback
+        return f"Error verifying translation: {e}"
 
-async def handle_translation_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Handler that processes the user's translation, verifies it, sends feedback,
-    and then generates a new exercise sentence for the same unit.
-    """
-    chat_id = update.message.chat_id
 
-    # Check if an exercise session is active for this chat
-    if chat_id not in current_exercises:
-        await update.message.reply_text("Please start an exercise first using /exercise <unit_number>.")
-        return
+# Start command handler: ask for YouTube link
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("Welcome! Please send me a YouTube video link.")
+    return VIDEO
 
-    # Retrieve the current exercise details and remove the old session
-    exercise_data = current_exercises.pop(chat_id)
-    ukrainian_sentence = exercise_data["ukrainian_sentence"]
-    unit_info = exercise_data["unit"]
+# Handle video link input
+async def video_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    video_url = update.message.text
+    try:
+        # Fetch the transcript (try French, fallback to English if needed)
+        transcript = youtube_utils.get_youtube_transcript(video_url, languages=['fr', 'en'])
+        context.user_data['transcript'] = transcript
+        context.user_data['video_url'] = video_url
+        await update.message.reply_text("Transcript loaded! Now, please specify your level (A1, A2, B1, B2, C1, or C2).")
+        return LEVEL
+    except Exception as e:
+        await update.message.reply_text(f"Error obtaining transcript: {e}\nPlease send a valid YouTube link.")
+        return VIDEO
 
-    # Get the user's translation
+# Handle level input
+async def level_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    level = update.message.text.upper().strip()
+    if level not in ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']:
+        await update.message.reply_text("Invalid level. Please enter one of: A1, A2, B1, B2, C1, C2.")
+        return LEVEL
+
+    context.user_data['level'] = level
+
+    # Extract useful phrases using the transcript and level
+    transcript = context.user_data['transcript']
+    phrases = await extract_useful_phrases(transcript, level)
+    context.user_data['useful_phrases'] = phrases
+    await update.message.reply_text(f"Here are some useful phrases for level {level}:\n\n{phrases}")
+
+    # Ask if the user wants to practice exercises based on these phrases.
+    reply_keyboard = [['Yes', 'No']]
+    await update.message.reply_text("Would you like to practice exercises based on these phrases?",
+                                    reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True))
+    return ASK_EXERCISE
+
+# Handle user's choice for exercise practice
+async def exercise_choice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    choice = update.message.text.lower()
+    if choice == 'yes':
+        level = context.user_data['level']
+        phrases = context.user_data['useful_phrases']
+        # Generate an exercise sentence using the extracted phrases.
+        exercise_sentence = await generate_exercise_sentence_from_phrases(phrases, level)
+        context.user_data['current_exercise'] = exercise_sentence
+        await update.message.reply_text(
+            f"Translate the following sentence into French:\n\n{exercise_sentence}")
+        return TRANSLATION
+    else:
+        await update.message.reply_text("Alright, feel free to send a new video link whenever you're ready.")
+        return ConversationHandler.END
+
+# Handle user's translation responses
+async def translation_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_translation = update.message.text
+    current_sentence = context.user_data.get('current_exercise')
+    phrases = context.user_data.get('useful_phrases')
+    level = context.user_data.get('level')
+    if not current_sentence:
+        await update.message.reply_text("There's no active exercise. Please start a new one with /start.")
+        return ConversationHandler.END
 
-    # Inform the user we're processing the translation
     await update.message.reply_text("Processing your translation, please wait...")
-
-    # Verify the translation and get the feedback from the LLM
-    feedback = await verify_translation(ukrainian_sentence, user_translation, unit_info)
+    feedback = await verify_translation(current_sentence, user_translation, phrases, level)
     await update.message.reply_text(feedback)
 
-    # Generate a new exercise sentence for the same unit
-    new_sentence = await generate_exercise_sentence(unit_info)
-    
-    # Save the new session for the chat using the same unit
-    current_exercises[chat_id] = {
-        "unit": unit_info,
-        "ukrainian_sentence": new_sentence
-    }
-    
-    # Send the new exercise sentence to the user
+    # Automatically generate a new exercise sentence from the same phrases.
+    new_sentence = await generate_exercise_sentence_from_phrases(phrases, level)
+    context.user_data['current_exercise'] = new_sentence
     await update.message.reply_text(
-        f"Next sentence for translation:\n\n{new_sentence}\n\nPlease provide your translation."
-    )
+        f"Next sentence for translation:\n\n{new_sentence}")
+    return TRANSLATION
+
+# Cancel handler in case the user wants to abort the conversation
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("Operation cancelled. Type /start to begin again.")
+    return ConversationHandler.END
+
+async def new_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data.clear()  # Clear any previous session data
+    await update.message.reply_text("You've chosen to enter a new video. Please send me your new YouTube link.")
+    return VIDEO  # Reset the conversation state to expect a new video link.
+
+# Create and add the conversation handler to your application
+conv_handler = ConversationHandler(
+    entry_points=[CommandHandler('start', start)],
+    states={
+        VIDEO: [MessageHandler(filters.TEXT & ~filters.COMMAND, video_handler)],
+        LEVEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, level_handler)],
+        ASK_EXERCISE: [MessageHandler(filters.Regex('^(Yes|No)$'), exercise_choice_handler)],
+        TRANSLATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, translation_handler)]
+    },
+    fallbacks=[
+        CommandHandler('cancel', cancel),
+        CommandHandler('newlink', new_link)
+    ]
+)
+
 
 
 
@@ -210,12 +212,9 @@ if __name__ == '__main__':
     start_handler = CommandHandler("start", start)
     echo_handler = MessageHandler(filters.TEXT & ~filters.COMMAND, echo)
 
-    application.add_handler(start_handler)
-    application.add_handler(CommandHandler("units", list_units))
-    application.add_handler(CommandHandler("exercise", send_exercise))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_translation_response))
-
-
+    application.add_handler(conv_handler)
+    application.add_handler(CommandHandler('newlink', new_link))
+    application.add_handler(CommandHandler('cancel', cancel))
     # Start the bot
     print("Bot is running...")
     application.run_polling()
