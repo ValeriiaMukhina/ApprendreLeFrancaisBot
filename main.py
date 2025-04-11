@@ -4,8 +4,7 @@ from flask import Flask
 from threading import Thread
 from telegram.ext import ApplicationBuilder
 
-# Import your bot logic from bot.py (ensure that bot.py does not call run_polling() directly)
-from bot import run_bot  # Suppose you refactor your bot start logic to a run_bot() function
+from bot import run_bot 
 
 # Create a Flask app
 app = Flask(__name__)

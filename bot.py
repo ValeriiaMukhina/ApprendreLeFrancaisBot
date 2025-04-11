@@ -251,18 +251,17 @@ conv_handler = ConversationHandler(
     fallbacks=[CommandHandler('cancel', cancel), CommandHandler('newlink', new_link)]
 )
 
-
-
-
-if __name__ == '__main__':
-    application = ApplicationBuilder().token(TOKEN).build()
-
+def run_bot():
+    application = ApplicationBuilder().token(os.environ.get("TELEGRAM_BOT_TOKEN")).build()
     start_handler = CommandHandler("start", start)
     echo_handler = MessageHandler(filters.TEXT & ~filters.COMMAND, echo)
 
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler('newlink', new_link))
     application.add_handler(CommandHandler('cancel', cancel))
-
-    print("Bot is running...")
     application.run_polling()
+
+
+# Optional: if you want to run your bot directly from bot.py, you can add:
+if __name__ == '__main__':
+    run_bot()
