@@ -17,7 +17,6 @@ def run():
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
 
 if __name__ == '__main__':
-    # Run the Flask server in a separate thread
-    Thread(target=run).start()
-    # Run your Telegram bot (this might be an asyncio run call)
-    asyncio.run(run_bot())
+    Thread(target=run_web).start()
+    # Run the bot synchronously.
+    run_bot()
