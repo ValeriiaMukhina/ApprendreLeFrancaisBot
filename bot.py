@@ -7,6 +7,7 @@ import openai
 from openai import AsyncOpenAI
 import youtube_utils
 from localization import MESSAGES
+import asyncio
 
 # Load environment variables from .env file
 load_dotenv()
@@ -143,7 +144,10 @@ async def video_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     video_url = update.message.text
     lang = context.user_data.get('lang', 'en')  # Get the selected language, default to English
     try:
-        transcript = youtube_utils.get_youtube_transcript(video_url, languages=['fr', 'en'])
+        # Run the synchronous transcript function in a separate thread.
+        transcript = await asyncio.to_thread(
+            youtube_utils.get_youtube_transcript, video_url, ['fr', 'en']
+        )
         context.user_data['transcript'] = transcript
         context.user_data['video_url'] = video_url
         # Retrieve the localized level prompt from the MESSAGES dictionary

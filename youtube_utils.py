@@ -64,7 +64,7 @@ def select_caption_track(tracks, language="fr"):
             return track
     return tracks[0] if tracks else None
 
-def download_subtitles(caption_track, fmt="srv3"):
+def download_subtitles(caption_track, fmt="srt"):
     """
     Download subtitles from the selected caption track.
     The format parameter (fmt) can be adjusted if necessary (common formats include srv1, srv3, etc.).
@@ -101,3 +101,7 @@ def get_youtube_transcript(video_url, languages=['fr', 'en']):
     
     subtitles = download_subtitles(selected_track)
     return subtitles
+
+if __name__ == '__main__':
+    subtitles = get_youtube_transcript("https://www.youtube.com/watch?v=jQ2tFvhvzqw", languages=['fr', 'en'])
+    print(subtitles)
