@@ -53,10 +53,18 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def extract_useful_phrases(transcript, level):
     prompt = (
-        f"Extract a list of useful French phrases for a level {level} learner "
-        f"from the following video transcript. For each phrase, provide its translation into Ukrainian.\n\nTranscript:\n{transcript}\n\n"
-        "Return the result in a bullet list format."
-    )
+        f"You are a qualified French teacher and native speaker.\n"
+        f"Your task is to help a French learner at level {level} enrich their vocabulary and learn useful expressions from the video transcript below.\n"
+        f"Please extract up to 15 useful words or short phrases that are appropriate for a learner at this level. These should be expressions that are common in daily life and helpful for everyday conversations.\n"
+
+        f"For each one:\n"
+        f"Provide the phrase in French\n"
+        f"Give a natural, spoken-style Ukrainian translation that is both accurate and easy to understand\n"
+        f"Transcript:\n"
+        f"{transcript}\n"
+        f"Output format:\n"
+        f"French phrase — Ukrainian translation"
+        )
     try:
         response = await client.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -73,9 +81,12 @@ async def extract_useful_phrases(transcript, level):
 
 async def generate_exercise_sentence_from_phrases(phrases, level):
     prompt = (
-        f"Based on the following useful French phrases for a level {level} learner:\n\n{phrases}\n\n"
-        "Generate a concise Ukrainian sentence that a French learner should translate into French. "
-        "The sentence should include at least one of the phrases and be appropriate for the student's level."
+        f"You are a qualified French teacher preparing a translation exercise for a student at level {level}.\n\n"
+        f"Based on the following list of useful French phrases:\n\n{phrases}\n\n"
+        "Create one concise sentence in Ukrainian that the student should translate into French.\n"
+        "- The sentence must include at least one phrase from the list.\n"
+        "- It should be natural, relevant to everyday life, and appropriate for the student’s language level.\n"
+        "- The goal is to help the learner practice using the phrase in context."
     )
     try:
         response = await client.chat.completions.create(
@@ -94,21 +105,27 @@ async def generate_exercise_sentence_from_phrases(phrases, level):
 async def verify_translation(original_sentence, user_translation, phrases, level, lang):
     if lang == 'ua':
         prompt = (
-            f"Ви — викладач французької мови. Учень отримав наступну вправу:\n\n"
-            f"Оригінальне українське речення: \"{original_sentence}\"\n"
-            f"Французький переклад учня: \"{user_translation}\"\n\n"
-            f"Корисні фрази для рівня {level}: {phrases}\n\n"
-            "Надайте правильний французький переклад, вкажіть помилки у перекладі учня "
-            "та поясніть, як їх виправити, українською."
+            f"Ви — кваліфікований викладач французької мови.\n\n"
+            f"Учневі було дано таке завдання:\n"
+            f"- Оригінальне речення українською: \"{original_sentence}\"\n"
+            f"- Переклад учня французькою: \"{user_translation}\"\n\n"
+            f"Рівень учня: {level}. Ось корисні фрази, які він/вона вивчає: {phrases}\n\n"
+            "Ваше завдання:\n"
+            "1. Наведіть правильний переклад українського речення французькою мовою.\n"
+            "2. Вкажіть помилки в перекладі учня.\n"
+            "3. Поясніть кожну помилку зрозумілою українською мовою, простими словами, які підходять для учня."
         )
     else:
         prompt = (
-            f"You are a French language tutor. A student was given the following exercise:\n\n"
-            f"Original Ukrainian sentence: \"{original_sentence}\"\n"
-            f"Student's French translation: \"{user_translation}\"\n\n"
-            f"Useful phrases for level {level}: {phrases}\n\n"
-            "Provide the correct French translation, point out any errors in the student's translation, "
-            "and explain the corrections in English."
+            f"You are a qualified French language tutor.\n\n"
+            f"A student was given the following exercise:\n"
+            f"- Original Ukrainian sentence: \"{original_sentence}\"\n"
+            f"- Student's French translation: \"{user_translation}\"\n\n"
+            f"The student is at level {level}. The following are useful phrases they are learning: {phrases}\n\n"
+            "Your task:\n"
+            "1. Provide the correct French translation of the Ukrainian sentence.\n"
+            "2. Point out any errors in the student's translation.\n"
+            "3. Explain each correction clearly in English, using simple terms suitable for a learner."
         )
     try:
         response = await client.chat.completions.create(
